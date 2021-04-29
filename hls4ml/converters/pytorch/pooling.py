@@ -17,7 +17,7 @@ def parse_pooling_layer(pytorch_layer, layer_name, input_shapes, data_reader, co
     layer = {}
     
     layer['name'] = layer_name # i.e. model.pool would give pool
-    layer['class_name'] = pytorch_layer.__class__.__name__.replace("Pool1d", "Pool1D").replace("Pool2d", "Pool2D") # i.e. maxpool2D, maxpool1d, etc
+    layer['class_name'] = pytorch_layer.__class__.__name__.replace("Pool1d", "Pooling1D").replace("Pool2d", "Pooling2D") # i.e. maxpool2D, maxpool1d, etc
     layer['data_format'] = 'channels_first' #By Pytorch default, cannot change
     
     ### Unsure about what this does ###
@@ -25,7 +25,7 @@ def parse_pooling_layer(pytorch_layer, layer_name, input_shapes, data_reader, co
     
     #Check if 1D or 2D. 1, 2 is the second to last character
     #if int(layer['class_name'][-2]) == 1:
-    if "Pool1D" in layer['class_name']:   
+    if "Pooling1D" in layer['class_name']:   
         '''Compute number of channels'''
         (layer['n_in'], layer['n_filt']) = parse_data_format(input_shapes[0], 'channels_first')
         
@@ -46,7 +46,7 @@ def parse_pooling_layer(pytorch_layer, layer_name, input_shapes, data_reader, co
         #Assuming only 'channels_first' is available
         output_shape=[input_shapes[0][0], layer['n_filt'], layer['n_out']]
         
-    elif "Pool2D" in layer['class_name']:
+    elif "Pooling2D" in layer['class_name']:
         
         '''Compute number of channels'''
         (layer['in_height'], layer['in_width'], layer['n_filt']) = parse_data_format(input_shapes[0], 'channels_first')
@@ -81,4 +81,4 @@ def parse_pooling_layer(pytorch_layer, layer_name, input_shapes, data_reader, co
         
         #Checking if git picks up this
         
-        
+ 
