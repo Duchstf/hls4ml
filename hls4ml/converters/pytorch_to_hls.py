@@ -187,15 +187,35 @@ def pytorch_to_hls(config):
         if pytorch_class in supported_layers:
             layer_counter += 1
         
+        if 'Pool1d' in pytorch_class:
+            transpose_layer = {}
+            transpose_layer['name'] = layer_name + '_transpose_in'
+            transpose_layer['class_name'] = 'Transpose'
+            transpose_layer['perm'] = [1, 0]
+            print('Layer name: {}, layer type: {}, input shape: {}'.format(transpose_layer['name'], transpose_layer['class_name'], input_shapes))
+            layer_list.append(transpose_layer)
+            output_shape = [input_shapes[0][0], input_shapes[0][2], input_shapes[0][1]]
+            input_shapes = [output_shape]
+            output_shapes[transpose_layer['name']] = output_shape
+
         #Process the layer
         layer, output_shape = layer_handlers[pytorch_class](pytorch_layer, layer_name, input_shapes, reader, config)
-
+        
         print('Layer name: {}, layer type: {}, input shape: {}'.format(layer['name'], layer['class_name'], input_shapes))
         layer_list.append(layer)
-        
         assert(output_shape is not None)
         output_shapes[layer['name']] = output_shape
-           
+        input_shapes = [output_shape]
+
+        if 'Pool1d' in pytorch_class:
+            transpose_layer = {}
+            transpose_layer['name'] = layer_name + '_transpose_out'
+            transpose_layer['class_name'] = 'Transpose'
+            transpose_layer['perm'] = [1, 0]
+            print('Layer name: {}, layer type: {}, input shape: {}'.format(transpose_layer['name'], transpose_layer['class_name'], input_shapes))
+            layer_list.append(transpose_layer)
+            output_shape = [input_shapes[0][0], input_shapes[0][2], input_shapes[0][1]]
+            output_shapes[transpose_layer['name']] = output_shape
 
     #################
     ## Generate HLS

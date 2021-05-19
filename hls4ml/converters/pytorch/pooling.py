@@ -18,7 +18,7 @@ def parse_pooling_layer(pytorch_layer, layer_name, input_shapes, data_reader, co
     
     layer['name'] = layer_name # i.e. model.pool would give pool
     layer['class_name'] = pytorch_layer.__class__.__name__.replace("Pool1d", "Pooling1D").replace("Pool2d", "Pooling2D") # i.e. maxpool2D, maxpool1d, etc
-    layer['data_format'] = 'channels_first' #By Pytorch default, cannot change
+    layer['data_format'] = 'channels_last' #override Pytorch default
     
     ### Unsure about what this does ###
     #layer['inputs'] = input_names 
@@ -27,7 +27,7 @@ def parse_pooling_layer(pytorch_layer, layer_name, input_shapes, data_reader, co
     #if int(layer['class_name'][-2]) == 1:
     if "Pooling1D" in layer['class_name']:   
         '''Compute number of channels'''
-        (layer['n_in'], layer['n_filt']) = parse_data_format(input_shapes[0], 'channels_first')
+        (layer['n_in'], layer['n_filt']) = parse_data_format(input_shapes[0], layer['data_format'])
         
         #prepare padding input
         layer['pool_width'] = pytorch_layer.kernel_size
@@ -43,13 +43,13 @@ def parse_pooling_layer(pytorch_layer, layer_name, input_shapes, data_reader, co
         #hls4ml layers after padding
         ( layer['n_out'], layer['pad_left'], layer['pad_right'] ) = compute_padding_1d(layer['padding'], layer['n_in'],layer['stride_width'], layer['pool_width'])
         
-        #Assuming only 'channels_first' is available
-        output_shape=[input_shapes[0][0], layer['n_filt'], layer['n_out']]
+        #Overriding to do 'channels_last'
+        output_shape=[input_shapes[0][0], layer['n_out'], layer['n_filt']]
         
     elif "Pooling2D" in layer['class_name']:
         
         '''Compute number of channels'''
-        (layer['in_height'], layer['in_width'], layer['n_filt']) = parse_data_format(input_shapes[0], 'channels_first')
+        (layer['in_height'], layer['in_width'], layer['n_filt']) = parse_data_format(input_shapes[0], layer['data_format'])
 
         layer['stride_height'] = pytorch_layer.stride[0]
         layer['stride_width'] = pytorch_layer.stride[1]
@@ -72,8 +72,8 @@ def parse_pooling_layer(pytorch_layer, layer_name, input_shapes, data_reader, co
         layer['stride_height'],layer['stride_width'],
         layer['pool_height'], layer['pool_width'])
         #Good
-        #Only channels_first is available in pytorch. cannot change
-        output_shape=[input_shapes[0][0], layer['n_filt'], layer['out_height'], layer['out_width']]
+        #Overriding to do 'channels_last'
+        output_shape=[input_shapes[0][0], layer['out_height'], layer['out_width'], layer['n_filt']]
     
     
     #Return parsed layer and output shape
