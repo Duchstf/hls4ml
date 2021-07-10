@@ -305,6 +305,8 @@ class VivadoWriter(Writer):
                 newline = line
                 numbers = OrderedDict.fromkeys([layer.get_numbers_cpp() for layer in model.get_layers()])
                 newline += ''.join(numbers)
+                newline = '\n'.join(set(newline.split('\n')))
+                newline += '\n'
 
             elif '//hls-fpga-machine-learning insert layer-precision' in line:
                 newline = line
@@ -690,3 +692,87 @@ class VivadoWriter(Writer):
         self.write_yml(model)
         self.write_tar(model)
         print('Done')
+ 
+class VivadoWriter_GNN(VivadoWriter):
+
+    def write_yml(self, model):
+        nonmodel_config = {}
+        submodule_config = {}
+
+        for key, val in model.config.config.items():
+            if key == 'PytorchModel':
+                for mkey, mval in val._modules.items():
+                    submodule_config[mkey] = mval
+            else:
+                nonmodel_config[key] = val
+
+        with open(model.config.get_output_dir() + "/nonmodel_config.yml", 'w') as file:
+            yaml.dump(nonmodel_config, file)
+        with open(model.config.get_output_dir() + "/submodule_config.yml", 'w') as file:
+            yaml.dump(submodule_config, file)
+
+        with open(model.config.get_output_dir() + "/submodule_config.yml", "r") as file:
+            submodule_config_str = file.read()
+        with open(model.config.get_output_dir() + "/nonmodel_config.yml", "r") as file:
+            nonmodel_config_str = file.read()
+
+        indent = "  "
+        model_config_str = f"PytorchModel: !!python/object:__main__.{model.config.config['PytorchModel'].__class__.__name__}"
+
+        model_config_str += "\n" + indent + "_backward_hooks: !!python/object/apply:collections.OrderedDict"
+        model_config_str += "\n" + indent + "- []"
+
+        model_config_str += "\n" + indent + "_buffers: !!python/object/apply:collections.OrderedDict"
+        model_config_str += "\n" + indent + "- []"
+
+        model_config_str += "\n" + indent + "_forward_hooks: !!python/object/apply:collections.OrderedDict"
+        model_config_str += "\n" + indent + "- []"
+
+        model_config_str += "\n" + indent + "_forward_pre_hooks: !!python/object/apply:collections.OrderedDict"
+        model_config_str += "\n" + indent + "- []"
+
+        model_config_str += "\n" + indent + "_load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict"
+        model_config_str += "\n" + indent + "- []"
+
+        model_config_str += "\n" + indent + "_non_persistent_buffer_sets: !!set {}"
+
+        model_config_str += "\n" + indent + "_parameters: !!python/object/apply:collections.OrderedDict"
+        model_config_str += "\n" + indent + "- []"
+
+        model_config_str += "\n" + indent + "_state_dict_hooks: !!python/object/apply:collections.OrderedDict"
+        model_config_str += "\n" + indent + "- []"
+
+        model_config_str += "\n" + indent + f"input_shape: {[model.reader.n_edge, model.reader.edge_dim], [model.reader.n_node, model.reader.node_dim], [2, model.reader.n_edge]}"
+        model_config_str += "\n" + indent + "quantized_model: false"
+        model_config_str += "\n" + indent + "training: true"
+        model_config_str += "\n" + indent + "_modules: !!python/object/apply:collections.OrderedDict"
+
+        submodule_config_lines = submodule_config_str.split("\n")
+        first_submodule_accounted = False
+        for i, line in enumerate(submodule_config_lines):
+            colon_start = line.find(":")
+
+            if line[:colon_start] in model.reader.torch_model._modules.keys():
+                newline = [line[:colon_start], line[colon_start + 1:]]
+
+                if first_submodule_accounted:
+                    newline[0] = indent + indent + "- - " + newline[0]
+                else:
+                    newline[0] = indent + "- - - " + newline[0]
+                    first_submodule_accounted = True
+
+                newline[1] = indent + indent + indent + "- " + newline[1]
+                newline = "\n".join(newline)
+                submodule_config_lines[i] = newline
+
+            else:
+                newline = indent + indent + indent + line
+                submodule_config_lines[i] = newline
+
+        top_config_str = nonmodel_config_str + model_config_str + "\n" + "\n".join(submodule_config_lines)
+        with open(model.config.get_output_dir() + "/hls4ml_config.yml", 'w') as file:
+            file.write(top_config_str)
+
+        os.remove(model.config.get_output_dir() + "/submodule_config.yml")
+        os.remove(model.config.get_output_dir() + "/nonmodel_config.yml")
+

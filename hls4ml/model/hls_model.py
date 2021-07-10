@@ -12,6 +12,7 @@ from collections import OrderedDict
 from hls4ml.model.hls_layers import *
 from hls4ml.templates import get_backend
 from hls4ml.writer import get_writer
+from hls4ml.writer.vivado_writer import VivadoWriter_GNN
 from hls4ml.model.optimizer import optimize_model, get_available_passes
 from hls4ml.report.vivado_report import parse_vivado_report
 
@@ -697,4 +698,65 @@ class HLSModel(object):
         os.chdir(curr_dir)
 
         return parse_vivado_report(self.config.get_output_dir())
+    
+class HLSModel_GNN(HLSModel):
+    def __init__(self, config, reader, layer_list):
+        inputs = [layer['name'] for layer in layer_list if layer['class_name'] == 'InputLayer']
+        super().__init__(config, reader, layer_list, inputs=inputs)
+        self.config.writer = VivadoWriter_GNN()
+
+    def get_weights_data(self, module_name, layer_name, var_name):
+        return self.reader.get_weights_data(module_name, layer_name, var_name)
+
+    def _get_top_function(self):
+        if self._top_function_lib is None:
+            raise Exception('Model not compiled')
+
+        # ctypes
+        node_attr_ctype = ctypes.POINTER(ctypes.ARRAY(ctypes.c_float, self.reader.n_node * self.reader.node_dim))
+        edge_attr_ctype = ctypes.POINTER(ctypes.ARRAY(ctypes.c_float, self.reader.n_edge * self.reader.edge_dim))
+        edge_index_ctype = ctypes.POINTER(ctypes.ARRAY(ctypes.c_uint32, 2 * self.reader.n_edge))
+        hls_pred_ctype = ctypes.POINTER(ctypes.ARRAY(ctypes.c_float, self.reader.n_edge))
+
+        # top function
+        top_func = getattr(self._top_function_lib, 'myproject_float')
+        top_func.restype = None
+        top_func.argtypes = [node_attr_ctype, edge_attr_ctype, edge_index_ctype, hls_pred_ctype,
+                             ctypes.POINTER(ctypes.c_ushort), ctypes.POINTER(ctypes.c_ushort),
+                             ctypes.POINTER(ctypes.c_ushort), ctypes.POINTER(ctypes.c_ushort)]
+        c_data_types = {
+            "node_attr": node_attr_ctype,
+            "edge_attr": edge_attr_ctype,
+            "edge_index": edge_index_ctype,
+            "prediction": hls_pred_ctype
+        }
+        return top_func, c_data_types
+
+    def compute_n_samples(self, node_attr, edge_attr, edge_index):
+        raise NotImplementedError("not implemented yet")
+
+    def predict(self, node_attr, edge_attr, edge_index):
+        top_func, c_data_types = self._get_top_function()
+
+        # get C-data
+        node_attr_1D = np.reshape(node_attr, newshape=(self.reader.n_node * self.reader.node_dim,))
+        edge_attr_1D = np.reshape(edge_attr, newshape=(self.reader.n_edge * self.reader.edge_dim,))
+        edge_index_1D = np.reshape(edge_index, newshape=(2 * self.reader.n_edge,)).astype(np.float32)
+        prediction = np.zeros(shape=(edge_attr.shape[0],)).astype(np.float32)
+
+        node_attr_c = node_attr_1D.ctypes.data_as(c_data_types['node_attr'])
+        edge_attr_c = edge_attr_1D.ctypes.data_as(c_data_types['edge_attr'])
+        edge_index_c = edge_index_1D.ctypes.data_as(c_data_types['edge_index'])
+        prediction_c = prediction.ctypes.data_as(c_data_types['prediction'])
+
+        #call top function
+        main_dir = os.getcwd()
+        os.chdir(os.path.join(self.config.get_output_dir(), 'firmware'))
+        top_func(node_attr_c, edge_attr_c, edge_index_c, prediction_c, ctypes.byref(ctypes.c_ushort()), ctypes.byref(ctypes.c_ushort()),
+                 ctypes.byref(ctypes.c_ushort()), ctypes.byref(ctypes.c_ushort()))
+        os.chdir(main_dir)
+
+        return prediction
+
+
 
